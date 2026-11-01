@@ -1,0 +1,48 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ada2b8f..462955b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -234,9 +234,9 @@ if(NOT COMMAND find_host_package)
+     endmacro()
+ endif()
+ 
+-# CMake needs to find the right version of python, right from the beginning,
+-# otherwise, it will find the wrong version and fail later
+-find_host_package(PythonInterp 3 REQUIRED)
++if(NOT GLSLANG_INFO_EXECUTABLE)
++    message(FATAL_ERROR "Set GLSLANG_INFO_EXECUTABLE to the Rust glslang-info tool")
++endif()
+ 
+ # Root directory for build-time generated include files
+ set(GLSLANG_GENERATED_INCLUDEDIR "${CMAKE_BINARY_DIR}/include")
+@@ -245,19 +245,16 @@ set(GLSLANG_GENERATED_INCLUDEDIR "${CMAKE_BINARY_DIR}/include")
+ # Build version information generation
+ ################################################################################
+ set(GLSLANG_CHANGES_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/CHANGES.md")
+-set(GLSLANG_BUILD_INFO_PY     "${CMAKE_CURRENT_SOURCE_DIR}/build_info.py")
+ set(GLSLANG_BUILD_INFO_H_TMPL "${CMAKE_CURRENT_SOURCE_DIR}/build_info.h.tmpl")
+ set(GLSLANG_BUILD_INFO_H      "${GLSLANG_GENERATED_INCLUDEDIR}/glslang/build_info.h")
+ 
+ # Command to build the build_info.h file
+ add_custom_command(
+     OUTPUT  ${GLSLANG_BUILD_INFO_H}
+-    COMMAND ${PYTHON_EXECUTABLE} "${GLSLANG_BUILD_INFO_PY}"
+-            ${CMAKE_CURRENT_SOURCE_DIR}
++    COMMAND ${GLSLANG_INFO_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}
+             "-i" ${GLSLANG_BUILD_INFO_H_TMPL}
+             "-o" ${GLSLANG_BUILD_INFO_H}
+-    DEPENDS ${GLSLANG_BUILD_INFO_PY}
+-            ${GLSLANG_CHANGES_FILE}
++    DEPENDS ${GLSLANG_INFO_EXECUTABLE} ${GLSLANG_CHANGES_FILE}
+             ${GLSLANG_BUILD_INFO_H_TMPL}
+     COMMENT "Generating ${GLSLANG_BUILD_INFO_H}")
+ 
+@@ -267,7 +264,7 @@ add_custom_target(glslang-build-info DEPENDS ${GLSLANG_BUILD_INFO_H})
+ # Populate the CMake GLSLANG_VERSION* variables with the build version
+ # information.
+ execute_process(
+-    COMMAND ${PYTHON_EXECUTABLE} "${GLSLANG_BUILD_INFO_PY}"
++    COMMAND ${GLSLANG_INFO_EXECUTABLE}
+             ${CMAKE_CURRENT_SOURCE_DIR} "<major>.<minor>.<patch><-flavor>;<major>;<minor>;<patch>;<flavor>"
+     OUTPUT_VARIABLE "GLSLANG_VERSIONS"
+     OUTPUT_STRIP_TRAILING_WHITESPACE)

@@ -1,0 +1,107 @@
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 9ac8d15..3ab76ab 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -36,7 +36,6 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
+ #include <unistd.h>
+ 
+ #include <rex/assert.h>
+-#include <rex/chrono/chrono_steady_cast.h>
+ #include <rex/logging.h>
+ #include <rex/thread/timer_queue.h>
+ 
+@@ -1305,6 +1304,21 @@ class PosixTimer : public PosixConditionHandle<Timer> {
+   using WClock_ = Timer::WClock_;
+   using GClock_ = Timer::GClock_;
+ 
++  static GClock_::time_point ToSteadyDeadline(WClock_::time_point due_time) {
++    const auto steady_now = GClock_::now();
++    const auto wall_now = WClock_::now();
++    // FILETIME can precede steady_clock's range; bound the delta before narrowing.
++    if (due_time <= wall_now) {
++      return steady_now;
++    }
++    const auto remaining = due_time - wall_now;
++    const auto available = GClock_::time_point::max() - steady_now;
++    if (remaining >= std::chrono::duration_cast<WClock_::duration>(available)) {
++      return GClock_::time_point::max();
++    }
++    return steady_now + std::chrono::duration_cast<GClock_::duration>(remaining);
++  }
++
+  public:
+   explicit PosixTimer(bool manual_reset) : PosixConditionHandle(manual_reset) {}
+   ~PosixTimer() override = default;
+@@ -1315,7 +1329,7 @@ class PosixTimer : public PosixConditionHandle<Timer> {
+   }
+   bool SetOnceAt(WClock_::time_point due_time,
+                  std::function<void()> opt_callback = nullptr) override {
+-    return SetOnceAt(std::chrono::clock_cast<GClock_>(due_time), std::move(opt_callback));
++    return SetOnceAt(ToSteadyDeadline(due_time), std::move(opt_callback));
+   };
+   bool SetOnceAt(GClock_::time_point due_time,
+                  std::function<void()> opt_callback = nullptr) override {
+@@ -1329,8 +1343,7 @@ class PosixTimer : public PosixConditionHandle<Timer> {
+   }
+   bool SetRepeatingAt(WClock_::time_point due_time, std::chrono::milliseconds period,
+                       std::function<void()> opt_callback = nullptr) override {
+-    return SetRepeatingAt(std::chrono::clock_cast<GClock_>(due_time), period,
+-                          std::move(opt_callback));
++    return SetRepeatingAt(ToSteadyDeadline(due_time), period, std::move(opt_callback));
+   }
+   bool SetRepeatingAt(GClock_::time_point due_time, std::chrono::milliseconds period,
+                       std::function<void()> opt_callback = nullptr) override {
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 0735441..a360756 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -11,6 +11,7 @@ add_executable(unit_tests
+     core/hash_test.cpp
+     core/stream_test.cpp
+     core/chrono_test.cpp
++    core/timer_deadline_test.cpp
+     ppc/import_function_test.cpp
+     ppc/stack_test.cpp
+     system/guest_path_test.cpp
+diff --git a/tests/unit/core/timer_deadline_test.cpp b/tests/unit/core/timer_deadline_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/core/timer_deadline_test.cpp
+@@ -0,0 +1,37 @@
++// Copyright (c) 2026 Contributors. BSD-3-Clause; see LICENSE.
++#include <chrono>
++#include <initializer_list>
++#include <catch2/catch_test_macros.hpp>
++#include <rex/thread.h>
++
++#if !REX_PLATFORM_WIN32
++using namespace std::chrono_literals;
++using rex::thread::Event;
++using rex::thread::Timer;
++using rex::thread::Wait;
++using rex::thread::WaitResult;
++using Clock = Timer::WClock_;
++
++TEST_CASE("Past absolute timers expire and auto-reset", "[timer-deadline]") {
++  for (const auto due :
++       {Clock::time_point{}, Clock::now() - std::chrono::duration_cast<Clock::duration>(1s)}) {
++    auto completed = Event::CreateManualResetEvent(false);
++    auto timer = Timer::CreateSynchronizationTimer();
++    REQUIRE(completed);
++    REQUIRE(timer);
++    REQUIRE(timer->SetOnceAt(due, [&] { completed->Set(); }));
++    REQUIRE(Wait(timer.get(), false, 2s) == WaitResult::kSuccess);
++    REQUIRE(Wait(completed.get(), false, 2s) == WaitResult::kSuccess);
++    CHECK(Wait(timer.get(), false, 0ms) == WaitResult::kTimeout);
++    REQUIRE(timer->Cancel());
++  }
++}
++
++TEST_CASE("Far-future absolute timers do not expire immediately", "[timer-deadline]") {
++  auto timer = Timer::CreateSynchronizationTimer();
++  REQUIRE(timer);
++  REQUIRE(timer->SetOnceAt(Clock::time_point::max()));
++  CHECK(Wait(timer.get(), false, 25ms) == WaitResult::kTimeout);
++  REQUIRE(timer->Cancel());
++}
++#endif

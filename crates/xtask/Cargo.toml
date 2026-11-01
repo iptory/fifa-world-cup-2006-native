@@ -1,0 +1,30 @@
+[package]
+name = "xtask"
+version = "0.2.0"
+default-run = "xtask"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+autobins = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[[bin]]
+name = "glslang-info"
+path = "src/bin/glslang-info.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+fifa-game-data = { path = "../game-data" }
+zip = { version = "9.1.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+tempfile = "3.27"
+
+
+[lints]
+workspace = true

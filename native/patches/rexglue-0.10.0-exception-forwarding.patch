@@ -1,0 +1,232 @@
+diff --git a/src/core/exception_handler_posix.cpp b/src/core/exception_handler_posix.cpp
+index 8b1c76a..80826ca 100644
+--- a/src/core/exception_handler_posix.cpp
++++ b/src/core/exception_handler_posix.cpp
+@@ -21,6 +21,8 @@
+ 
+ #include <signal.h>
+ 
++#include <cstdlib>  // std::abort
++
+ #include <cstdint>
+ #include <cstring>
+ 
+@@ -49,6 +51,48 @@ constexpr size_t kMaxHandlerCount = 8;
+ // Executed in order.
+ std::pair<ExceptionHandler::Handler, void*> handlers_[kMaxHandlerCount];
+ 
++static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
++                                     void* signal_context);
++
++static void ForwardUnhandledFault(int signal_number, siginfo_t* signal_info,
++                                  void* signal_context) {
++  struct sigaction& saved = signal_number == SIGILL ? original_sigill_handler_
++#if REX_PLATFORM_MAC
++                           : signal_number == SIGBUS ? original_sigbus_handler_
++#endif
++                                                     : original_sigsegv_handler_;
++  const struct sigaction previous = saved;
++  if (previous.sa_handler == SIG_IGN && signal_info->si_code <= 0) return;
++  if (previous.sa_handler != SIG_DFL && previous.sa_handler != SIG_IGN &&
++      (!(previous.sa_flags & SA_SIGINFO) ||
++       previous.sa_sigaction != ExceptionHandlerCallback)) {
++    if (previous.sa_flags & SA_RESETHAND) {
++      saved = {};
++      saved.sa_handler = SIG_DFL;
++    }
++    // Recreate the prior handler's mask, including SA_NODEFER used by POSIX SEH.
++    sigset_t mask = reinterpret_cast<ucontext_t*>(signal_context)->uc_sigmask;
++    for (int sig = 1; sig < NSIG; ++sig) {
++      if (sigismember(&previous.sa_mask, sig) == 1) sigaddset(&mask, sig);
++    }
++    if (!(previous.sa_flags & SA_NODEFER)) sigaddset(&mask, signal_number);
++    sigprocmask(SIG_SETMASK, &mask, nullptr);
++    if (previous.sa_flags & SA_SIGINFO) {
++      previous.sa_sigaction(signal_number, signal_info, signal_context);
++    } else {
++      previous.sa_handler(signal_number);
++    }
++    return;
++  }
++  // A synchronous fault cannot be ignored: let the original signal terminate it.
++  struct sigaction action {};
++  action.sa_handler = SIG_DFL;
++  sigemptyset(&action.sa_mask);
++  if (sigaction(signal_number, &action, nullptr) != 0 || raise(signal_number) != 0) {
++    std::abort();
++  }
++}
++
+ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+                                      void* signal_context) {
+ #if REX_PLATFORM_MAC
+@@ -417,6 +461,9 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+       return;
+     }
+   }
++  // No handler claimed the fault: forward to the previously installed
++  // disposition instead of returning to the faulting instruction.
++  ForwardUnhandledFault(signal_number, signal_info, signal_context);
+ }
+ 
+ void ExceptionHandler::Install(Handler fn, void* data) {
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index a360756..6df2823 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -78,3 +78,5 @@ catch_discover_tests(unit_tests
+         LABELS "unit"
+         TIMEOUT 60
+ )
++
++target_sources(unit_tests PRIVATE core/exception_forwarding_test.cpp)
+diff --git a/tests/unit/core/exception_forwarding_test.cpp b/tests/unit/core/exception_forwarding_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/core/exception_forwarding_test.cpp
+@@ -0,0 +1,145 @@
++// Copyright (c) 2026 Contributors. BSD-3-Clause; see LICENSE.
++#include <rex/platform.h>
++
++#if REX_PLATFORM_LINUX || REX_PLATFORM_MAC
++#include <cerrno>
++#include <csignal>
++#include <sys/mman.h>
++#include <sys/resource.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++#include <catch2/catch_test_macros.hpp>
++#include <rex/exception_handler.h>
++
++namespace {
++using rex::arch::Exception;
++using rex::arch::ExceptionHandler;
++void* fault_page;
++volatile sig_atomic_t claimed_count = 0;
++volatile sig_atomic_t plain_count = 0;
++
++bool Decline(Exception*, void*) { return false; }
++bool Claim(Exception*, void*) {
++  claimed_count = claimed_count + 1;
++  return true;
++}
++void PlainProbe(int) { plain_count = plain_count + 1; }
++void SiginfoProbe(int signal, siginfo_t* info, void* context) {
++  sigset_t mask;
++  sigprocmask(SIG_SETMASK, nullptr, &mask);
++  _exit(signal == SIGSEGV && info->si_addr == fault_page && context &&
++                sigismember(&mask, SIGUSR1) == 1 && sigismember(&mask, SIGUSR2) == 1 &&
++                sigismember(&mask, SIGSEGV) == 0 ? 42 : 41);
++}
++void FaultPage() {
++  fault_page = mmap(nullptr, 4096, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++  if (fault_page == MAP_FAILED) _exit(124);
++  const auto value = *static_cast<volatile unsigned char*>(fault_page);
++  (void)value;
++  _exit(127);
++}
++
++template <typename Function>
++int RunChild(Function function) {
++  const pid_t pid = fork();
++  REQUIRE(pid >= 0);
++  if (pid == 0) {
++    const rlimit no_core{0, 0};
++    setrlimit(RLIMIT_CORE, &no_core);
++    signal(SIGALRM, SIG_DFL);
++    signal(SIGSEGV, SIG_DFL);
++    signal(SIGILL, SIG_DFL);
++    alarm(3);
++    function();
++    _exit(127);
++  }
++  int status = 0;
++  pid_t waited;
++  do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
++  REQUIRE(waited == pid);
++  return status;
++}
++}  // namespace
++
++TEST_CASE("Unhandled memory faults preserve saved siginfo and signal masks", "[exception-forwarding]") {
++  const int status = RunChild([] {
++    sigset_t mask;
++    sigemptyset(&mask);
++    sigaddset(&mask, SIGUSR1);
++    sigprocmask(SIG_SETMASK, &mask, nullptr);
++    struct sigaction probe {};
++    probe.sa_sigaction = SiginfoProbe;
++    probe.sa_flags = SA_SIGINFO | SA_NODEFER;
++    sigemptyset(&probe.sa_mask);
++    sigaddset(&probe.sa_mask, SIGUSR2);
++    sigaction(SIGSEGV, &probe, nullptr);
++    ExceptionHandler::Install(Decline, nullptr);
++    FaultPage();
++  });
++  REQUIRE(WIFEXITED(status));
++  CHECK(WEXITSTATUS(status) == 42);
++}
++
++TEST_CASE("Unhandled faults terminate with their original signal", "[exception-forwarding]") {
++  for (const int signal_number : {SIGSEGV, SIGILL}) {
++    CAPTURE(signal_number);
++    const int status = RunChild([=] {
++      ExceptionHandler::Install(Decline, nullptr);
++      if (signal_number == SIGSEGV) FaultPage();
++      raise(signal_number);
++    });
++    REQUIRE(WIFSIGNALED(status));
++    CHECK(WTERMSIG(status) == signal_number);
++  }
++}
++
++TEST_CASE("Saved one-shot handlers reset after forwarding", "[exception-forwarding]") {
++  const int status = RunChild([] {
++    struct sigaction probe {};
++    probe.sa_handler = PlainProbe;
++    probe.sa_flags = SA_RESETHAND;
++    sigemptyset(&probe.sa_mask);
++    sigaction(SIGILL, &probe, nullptr);
++    ExceptionHandler::Install(Decline, nullptr);
++    raise(SIGILL);
++    if (plain_count != 1) _exit(41);
++    raise(SIGILL);
++  });
++  REQUIRE(WIFSIGNALED(status));
++  CHECK(WTERMSIG(status) == SIGILL);
++}
++
++TEST_CASE("Claimed exceptions resume without forwarding", "[exception-forwarding]") {
++  const int status = RunChild([] {
++    struct sigaction probe {};
++    probe.sa_handler = [](int) { _exit(41); };
++    sigemptyset(&probe.sa_mask);
++    sigaction(SIGILL, &probe, nullptr);
++    ExceptionHandler::Install(Claim, nullptr);
++    raise(SIGILL);
++    raise(SIGILL);
++    _exit(claimed_count == 2 ? 42 : 43);
++  });
++  REQUIRE(WIFEXITED(status));
++  CHECK(WEXITSTATUS(status) == 42);
++}
++
++TEST_CASE("Saved ignore applies only to asynchronous signals", "[exception-forwarding]") {
++  const int ignored = RunChild([] {
++    signal(SIGILL, SIG_IGN);
++    ExceptionHandler::Install(Decline, nullptr);
++    raise(SIGILL);
++    _exit(42);
++  });
++  REQUIRE(WIFEXITED(ignored));
++  CHECK(WEXITSTATUS(ignored) == 42);
++  const int faulted = RunChild([] {
++    signal(SIGSEGV, SIG_IGN);
++    ExceptionHandler::Install(Decline, nullptr);
++    FaultPage();
++  });
++  REQUIRE(WIFSIGNALED(faulted));
++  CHECK(WTERMSIG(faulted) == SIGSEGV);
++}
++#endif

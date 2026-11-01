@@ -1,0 +1,125 @@
+# Executable SHA-256: cb184f76112c3e60ec658cc1398779c3b9e09f3007f4ec2b6482bd22b66929b6
+# Title 454107E6, media 4C1B827B, version 0.0.0.8 (83769PAL_En).
+
+# Native nonlocal jumps must unwind the host call stack as well as restore
+# the guest registers. These entries save/restore the same guest jump buffer.
+setjmp_address = 0x82824FF0
+longjmp_address = 0x82823F30
+
+[functions]
+# Direct tail-branch targets missed by automatic discovery.
+0x8282FC30 = {}
+0x8282FAB8 = {}
+# The 932-entry CRT initializer array beginning at 0x82990014 references
+# this leaf initializer, which has no stack prologue.
+0x82973268 = {}
+# Reference-counting leaf reached through a virtual call during startup.
+0x8249BF20 = {}
+# Leaf callback installed by the JPEG decoder at 0x8280A780.
+0x8280A768 = {}
+#
+# Leaf/thunk entries referenced by static function-pointer tables without
+# RTTI. Each starts after padding or a return, alongside registered entries.
+0x82136B30 = {} # table 0x8209BC18
+0x8219FB80 = {} # table 0x820A2E48
+0x82217238 = {} # table 0x820AF558
+0x82290B40 = {} # table 0x820B93E0
+0x822A27B8 = {} # table 0x820ADDD4
+0x822A27D0 = {} # table 0x820BA7D8; reached during startup
+0x822BFCC0 = {} # table 0x820CDC5C
+0x822D4CF0 = {} # table 0x820D0F98
+0x824395A8 = {} # table 0x820E0564
+0x8245C0B8 = {} # table 0x820E1A44
+0x8262E980 = {} # table 0x82007994
+0x8262ECC0 = {} # table 0x82007B64
+0x8262ED38 = {} # table 0x82007B70
+0x8262F168 = {} # table 0x82007BA4
+0x82798070 = {} # table 0x82031768
+0x828535C8 = {} # table 0x8204BBC4
+0x828535E8 = {} # table 0x8204BC28
+0x82853608 = {} # table 0x8204BC20
+0x82853810 = {} # table 0x8204BC70
+0x82859EA8 = {} # table 0x8204BBA8
+0x82859EC0 = {} # table 0x8204BBAC
+# Function-pointer entries following non-fallthrough branches (including
+# this-adjusting virtual thunks). Table addresses are from the original image.
+0x82282640 = {} # table 0x820B83F4
+0x8245C0A0 = {} # follows bctr at 0x8245C09C; indirect bctr callback between 0x8245C078 and 0x8245C0B8, no static table entry
+0x8246C1B8 = {} # table 0x820E2090
+0x8251DCE8 = {} # table 0x820E57A4
+0x82570D10 = {} # table 0x820E702C
+0x82594328 = {} # table 0x820FB2EC; reached during startup
+0x8262ECE8 = {} # table 0x82007B68
+0x8262ED10 = {} # table 0x82007B6C
+0x82805240 = {} # table 0x82042764
+0x828058F0 = {} # table 0x8204275C
+0x8282FAA8 = {} # table 0x820481A8
+0x82838300 = {} # table 0x82049228
+0x82838308 = {} # table 0x8204922C
+0x82838310 = {} # table 0x820492A8
+0x82838320 = {} # table 0x820492B0
+0x82838340 = {} # table 0x820491E4
+0x82838348 = {} # table 0x820492D0
+0x82838358 = {} # table 0x820492D8
+0x82838368 = {} # table 0x820492E0
+0x82853830 = {} # table 0x8204BC74
+0x8292DDD0 = {} # table 0x82064DF4
+# Callback assigned as a code constant rather than a static table entry.
+0x82497350 = {}
+# Additional non-RTTI callbacks from initialized data and virtual thunk runs.
+0x82165CA0 = {} # table 0x82A1EBC4; reached during startup
+0x824EA4B0 = {} # table 0x82A07C54
+0x82838318 = {} # table 0x820492AC
+0x82853850 = {} # table 0x8204BC78
+0x82853870 = {} # table 0x8204BC7C
+0x82853890 = {} # table 0x8204BC80
+0x828538B0 = {} # table 0x8204BC84
+0x828538D0 = {} # table 0x8204BC88
+0x828538F0 = {} # table 0x8204BC8C
+0x82853910 = {} # table 0x8204BC90
+0x82853930 = {} # table 0x8204BC94
+
+# Caller 0x82259F94 bounds r5 to 0..12. Byte map 0x8209ABF0
+# has 13 entries; automatic scanning consumed neighboring data.
+[[switch_tables]]
+address = 0x8248D420
+register = 5
+labels = [
+    0x8248D424, 0x8248D49C, 0x8248D510, 0x8248D524,
+    0x8248D55C, 0x8248D5AC, 0x8248D60C, 0x8248D614,
+    0x8248D61C, 0x8248D624, 0x8248D62C, 0x8248D640,
+    0x8248D654,
+]
+
+# Byte map 0x8209AD30 contains 12 selectors, followed by alignment
+# and a separate map at 0x8209AD40. r30 retains the r4 selector.
+[[switch_tables]]
+address = 0x8240DC34
+register = 30
+labels = [
+    0x8240DC38, 0x8240DC4C, 0x8240DC5C, 0x8240DC6C,
+    0x8240DC90, 0x8240DCD0, 0x8240DCF4, 0x8240DD00,
+    0x8240DD0C, 0x8240DD18, 0x8240DD2C, 0x8240DD34,
+]
+
+# Adjacent 15-entry byte maps at 0x8209A2B0 and 0x8209A2A0.
+# Neither table extends into the following aligned map.
+[[switch_tables]]
+address = 0x821D7DCC
+register = 5
+labels = [
+    0x821D7DD0, 0x821D7DE0, 0x821D7DF0, 0x821D7E00,
+    0x821D7E10, 0x821D7E20, 0x821D7E30, 0x821D7E48,
+    0x821D7E60, 0x821D7E78, 0x821D7E90, 0x821D7EA8,
+    0x821D7EC0, 0x821D7ED8, 0x821D7EF0,
+]
+
+[[switch_tables]]
+address = 0x821D8028
+register = 5
+labels = [
+    0x821D802C, 0x821D803C, 0x821D804C, 0x821D805C,
+    0x821D806C, 0x821D807C, 0x821D808C, 0x821D809C,
+    0x821D80AC, 0x821D80BC, 0x821D80CC, 0x821D80DC,
+    0x821D80EC, 0x821D80FC, 0x821D810C,
+]

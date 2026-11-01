@@ -1,0 +1,17 @@
+diff --git a/src/ui/windowed_app_context_sdl.cpp b/src/ui/windowed_app_context_sdl.cpp
+--- a/src/ui/windowed_app_context_sdl.cpp
++++ b/src/ui/windowed_app_context_sdl.cpp
+@@ -63,10 +63,13 @@ bool SDLWindowedAppContext::Initialize() {
+   }
+   wakeup_event_type_ = first;
+   paint_event_type_ = first + 1;
++#if REX_PLATFORM_MAC
++  // Cocoa needs synchronous quit; other backends must close outside SDL's watch lock.
+   if (!SDL_AddEventWatch(WatchEvent, this)) {
+     REXLOG_ERROR("SDL_AddEventWatch failed: {}", SDL_GetError());
+     return false;
+   }
+   event_watch_registered_ = true;
++#endif
+   return true;
+ }

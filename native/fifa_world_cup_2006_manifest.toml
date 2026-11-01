@@ -1,0 +1,9 @@
+[project]
+name = "fifa_world_cup_2006"
+sdk_version = "0.10.0"
+game_root = "../private/game"
+
+[entrypoint]
+file_path = "../private/game/default.xex"
+out_directory_path = "generated/default"
+includes = ["revision.toml"]

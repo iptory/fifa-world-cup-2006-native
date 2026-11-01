@@ -1,0 +1,65 @@
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 0c341bb..582bcb6 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -320,7 +320,7 @@ class PosixConditionBase {
+   }
+ 
+-  static std::pair<WaitResult, size_t> WaitMultiple(std::vector<PosixConditionBase*>&& handles,
+-                                                    bool wait_all,
+-                                                    std::chrono::milliseconds timeout) {
++  static std::pair<WaitResult, size_t> WaitMultiple(
++      const std::vector<PosixConditionBase*>& handles, bool wait_all,
++      std::chrono::milliseconds timeout) {
+     assert_true(!handles.empty());
+ 
+@@ -334,4 +334,6 @@ class PosixConditionBase {
+                         ? std::chrono::steady_clock::time_point::max()
+                         : start_time + timeout;
++    std::vector<std::unique_lock<std::mutex>> locks;
++    locks.reserve(handles.size());
+ 
+     while (true) {
+@@ -340,6 +342,4 @@ class PosixConditionBase {
+       bool all_locked = true;
+ 
+-      std::vector<std::unique_lock<std::mutex>> locks;
+-      locks.reserve(handles.size());
+ 
+       for (size_t i = 0; i < handles.size(); ++i) {
+@@ -411,11 +411,5 @@ class PosixConditionBase {
+       }
+ 
+-      if (timeout == std::chrono::milliseconds::max()) {
+-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+-      } else {
+-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - now);
+-        auto sleep_time = std::min(remaining, std::chrono::milliseconds(1));
+-        std::this_thread::sleep_for(sleep_time);
+-      }
++      std::this_thread::sleep_until(std::min(end_time, now + std::chrono::milliseconds(1)));
+     }
+   }
+@@ -1106,5 +1100,5 @@ std::chrono::milliseconds ComputeAlertableWaitTimeout(
+     return kAlertablePollSlice;
+   }
+-  auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
++  auto remaining = std::chrono::ceil<std::chrono::milliseconds>(
+       deadline - std::chrono::steady_clock::now());
+   if (remaining <= std::chrono::milliseconds::zero()) {
+@@ -1225,5 +1219,5 @@ std::pair<WaitResult, size_t> WaitMultiple(WaitHandle* wait_handles[], size_t wa
+   }
+   if (!is_alertable) {
+-    return PosixConditionBase::WaitMultiple(std::move(conditions), wait_all, timeout);
++    return PosixConditionBase::WaitMultiple(conditions, wait_all, timeout);
+   }
+ 
+@@ -1237,6 +1231,6 @@ std::pair<WaitResult, size_t> WaitMultiple(WaitHandle* wait_handles[], size_t wa
+       return std::make_pair(WaitResult::kTimeout, 0);
+     }
+-    auto result = PosixConditionBase::WaitMultiple(std::vector<PosixConditionBase*>(conditions),
+-                                                   wait_all, ComputeAlertableWaitTimeout(deadline));
++    auto result = PosixConditionBase::WaitMultiple(
++        conditions, wait_all, ComputeAlertableWaitTimeout(deadline));
+     if (result.first != WaitResult::kTimeout) {
+       return result;

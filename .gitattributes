@@ -1,0 +1,4 @@
+* text=auto eol=lf
+# Unified-diff context markers and verbatim upstream licenses are significant.
+*.patch whitespace=-blank-at-eol
+native/licenses/** whitespace=-blank-at-eof
